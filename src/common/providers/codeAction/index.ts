@@ -4,6 +4,7 @@ import "./makeExternalDeclarationFromUsageCodeAction";
 import "./addTypeAnnotationCodeAction";
 import "./extractFunctionCodeAction";
 import "./extractTypeAliasCodeAction";
+import "./inlineFunctionCodeAction";
 import "./exposeUnexposeCodeAction";
 import "./moveFunctionCodeAction";
 import "./addMissingRecordFieldCodeAction";
