@@ -1,9 +1,7 @@
-import { CodeActionKind, Position, Range, TextEdit } from "vscode-languageserver";
+import { CodeActionKind, Range, TextEdit } from "vscode-languageserver";
 import { SyntaxNode } from "web-tree-sitter";
-import { getSpaces, RefactorEditUtils } from "../../util/refactorEditUtils";
+import { getSpaces } from "../../util/refactorEditUtils";
 import { TreeUtils } from "../../util/treeUtils";
-import { TFunction } from "../../../compiler/typeInference";
-import dedent from "dedent";
 import {
   CodeActionProvider,
   IRefactorCodeAction,
@@ -43,42 +41,53 @@ CodeActionProvider.registerRefactorAction(refactorName, {
     params: ICodeActionParams,
     actionName: string,
   ): IRefactorEdit => {
-    let node = TreeUtils.getNamedDescendantForRange(
-      params.sourceFile,
-      params.range,
-    );
-
-    const call = TreeUtils.findParentOfType("function_call_expr", node);
-
     const checker = params.program.getTypeChecker();
-    const rootNode = params.sourceFile.tree.rootNode;
 
     const nodeAtPosition = TreeUtils.getNamedDescendantForRange(
       params.sourceFile,
       params.range,
     );
 
-    const definitionNode = checker.findDefinition(
+    const definitionResult = checker.findDefinition(
       nodeAtPosition,
       params.sourceFile,
     );
-    const definitionBody = TreeUtils.findParentOfType("value_declaration", definitionNode.symbol!.node);
-    const references = References.find(definitionNode.symbol, params.program)
-    const calls = references.filter((ref) => ref.node.type === "function_call_expr")
-    console.log({
-      nodeAtPosition, definitionNode, references, calls,
-      refnodes: references.map((ref) => ref.node.parent?.parent?.parent?.type)
-    })
+    const definitionNode = TreeUtils.findParentOfType("value_declaration", definitionResult.symbol!.node);
+    const definitionBody = definitionNode!.lastChild!;
+    const references = References.find(definitionResult.symbol, params.program)
 
-    const edits: TextEdit[] = references.flatMap((ref) => {
-      const callNode = ref.node.parent?.parent?.parent;
-      console.log("ref", callNode)
+    const edits: TextEdit[] = references.flatMap((callRef) => {
+      const callNode = callRef.node.parent?.parent?.parent;
+
       if (callNode && callNode.type === "function_call_expr") {
-        console.log("target", ref)
-        const bodyText = definitionBody!.lastChild!.text.replace(
-          new RegExp(`^${getSpaces(definitionBody!.lastChild!.startPosition.column)}`, "gm"),
+        const argValues = functionCallArguments(callNode)
+        const bodyEdits: { start: number, end: number, newText: string }[] = [];
+        const functionArgsSymbolMap = params.sourceFile.symbolLinks!.get(definitionNode!)!
+        definitionNode!.firstNamedChild?.children.slice(1).forEach(
+          (argNode, argIndex) => {
+            const argSymbol = functionArgsSymbolMap.get(argNode.text);
+            const argumentReferences = References.find(argSymbol, params.program);
+            const replacementNode = argValues[argIndex]
+
+            argumentReferences.forEach(argRef => {
+              if (
+                argRef.node.tree.uri === definitionBody.tree.uri
+                && argRef.node.startIndex >= definitionBody.startIndex
+                && argRef.node.endIndex <= definitionBody.endIndex) {
+                bodyEdits.push({
+                  start: argRef.node.startIndex - definitionBody.startIndex,
+                  end: argRef.node.endIndex - definitionBody.startIndex,
+                  newText: replacementNode.text,
+                })
+              }
+            })
+          }
+        )
+
+        const bodyText = applyEdits(bodyEdits, definitionBody.text).replace(
+          new RegExp(`^${getSpaces(definitionBody.startPosition.column)}`, "gm"),
           "")
-        console.log("function body", bodyText)
+
         return [
           TextEdit.replace(
             Range.create(
@@ -93,8 +102,6 @@ CodeActionProvider.registerRefactorAction(refactorName, {
       }
     });
 
-    console.log(edits)
-
     return {
       edits: edits,
       renamePosition: {
@@ -104,3 +111,19 @@ CodeActionProvider.registerRefactorAction(refactorName, {
     };
   },
 });
+
+function functionCallArguments(node: SyntaxNode): SyntaxNode[] {
+  return node.namedChildren.slice(1);
+}
+
+function applyEdits(edits: { start: number; end: number; newText: string; }[], text: string) {
+  const sortedEdits = [...edits].sort(
+    (a, b) => b.start - a.start
+  )
+
+  return sortedEdits.reduce(
+    (acc, edit) =>
+      acc.slice(0, edit.start) + edit.newText + acc.slice(edit.end),
+    text,
+  )
+}

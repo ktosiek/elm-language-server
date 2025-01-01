@@ -20,13 +20,13 @@ foo val str =
 
 
 newFunction : Maybe { a | prop1 : number, prop2 : number } -> Maybe { b | field1 : Maybe { a | prop1 : number, prop2 : number }, field2 : unknown, field3 : c } -> unknown -> unknown
-newFunction field1 val field2 =
-    case field1 of
+newFunction f1 val f2 =
+    case f1 of
         Just { prop1, prop2 } ->
-            prop1 + prop2 + val + field2
+            prop1 + prop2 + val + f2
 
         Nothing ->
-            field2 + val2
+            f2 + val2
 `;
 
     const expectedSource = `
