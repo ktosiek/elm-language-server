@@ -19,7 +19,7 @@ foo val str =
             str + val2
 
 
-newFunction : Maybe { a | prop1 : number, prop2 : number } -> Maybe { b | field1 : Maybe { a | prop1 : number, prop2 : number }, field2 : unknown, field3 : c } -> unknown -> unknown
+newFunction : Maybe { a | prop1 : number, prop2 : number } -> number -> number -> Maybe number
 newFunction f1 val f2 =
     case f1 of
         Just { prop1, prop2 } ->
@@ -48,6 +48,10 @@ foo val str =
 
         Nothing ->
             str + val2
+
+
+
+
 `;
 
     await testCodeAction(

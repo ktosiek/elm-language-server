@@ -102,6 +102,23 @@ CodeActionProvider.registerRefactorAction(refactorName, {
       }
     });
 
+    const annotationNode = definitionNode?.previousSibling;
+    if (annotationNode?.type === "type_annotation") {
+      edits.push(
+        TextEdit.del(Range.create(
+          PositionUtil.FROM_TS_POSITION(annotationNode.startPosition).toVSPosition(),
+          PositionUtil.FROM_TS_POSITION(annotationNode.endPosition).toVSPosition(),
+        ))
+      );
+    }
+    edits.push(
+      TextEdit.del(
+        Range.create(
+          PositionUtil.FROM_TS_POSITION(definitionNode!.startPosition).toVSPosition(),
+          PositionUtil.FROM_TS_POSITION(definitionNode!.endPosition).toVSPosition(),
+        )
+      )
+    )
     return {
       edits: edits,
       renamePosition: {
