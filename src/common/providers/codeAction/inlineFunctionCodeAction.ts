@@ -11,6 +11,12 @@ import { ICodeActionParams } from "../paramsExtensions";
 import { References } from "../../../compiler/references";
 import { PositionUtil } from "../../positionUtil";
 
+type FragmentEdit = {
+  start: number;
+  end: number;
+  newText: string;
+};
+
 const refactorName = "inline_function";
 CodeActionProvider.registerRefactorAction(refactorName, {
   getAvailableActions: (params: ICodeActionParams): IRefactorCodeAction[] => {
@@ -61,28 +67,40 @@ CodeActionProvider.registerRefactorAction(refactorName, {
 
       if (callNode && callNode.type === "function_call_expr") {
         const argValues = functionCallArguments(callNode)
-        const bodyEdits: { start: number, end: number, newText: string }[] = [];
+        const bodyEdits: FragmentEdit[] = [];
         const functionArgsSymbolMap = params.sourceFile.symbolLinks!.get(definitionNode!)!
-        definitionNode!.firstNamedChild?.children.slice(1).forEach(
+        const letClauses: string[] = []
+        definitionNode!.firstNamedChild?.namedChildren.slice(1).forEach(
           (argNode, argIndex) => {
             const argSymbol = functionArgsSymbolMap.get(argNode.text);
             const argumentReferences = References.find(argSymbol, params.program);
             const replacementNode = argValues[argIndex]
 
-            argumentReferences.forEach(argRef => {
-              if (
-                argRef.node.tree.uri === definitionBody.tree.uri
-                && argRef.node.startIndex >= definitionBody.startIndex
-                && argRef.node.endIndex <= definitionBody.endIndex) {
-                bodyEdits.push({
-                  start: argRef.node.startIndex - definitionBody.startIndex,
-                  end: argRef.node.endIndex - definitionBody.startIndex,
-                  newText: replacementNode.text,
-                })
-              }
-            })
+            switch (argNode.type) {
+              case "lower_pattern":
+                // Simple argument, like in `f myArg = ...`
+                bodyEdits.push(
+                  ...replaceReferencesInFragment(
+                    argumentReferences.map(ref => ref.node),
+                    replacementNode.text,
+                    definitionBody)
+                )
+                break;
+
+              case "pattern":
+                // Any other pattern, like in `f (T myArg) = ...`
+                letClauses.push(
+                  `(${argNode.text}) = ${replacementNode.text}`
+                )
+                break;
+
+              default:
+                console.warn(`Unknown function parameter node type "${argNode.type}" for argument "${argNode.text}"`)
+            }
           }
         )
+
+        bodyEdits.push(...addLetClauses(letClauses, definitionBody));
 
         const bodyText = applyEdits(bodyEdits, definitionBody.text).replace(
           new RegExp(`^${getSpaces(definitionBody.startPosition.column)}`, "gm"),
@@ -133,7 +151,7 @@ function functionCallArguments(node: SyntaxNode): SyntaxNode[] {
   return node.namedChildren.slice(1);
 }
 
-function applyEdits(edits: { start: number; end: number; newText: string; }[], text: string) {
+function applyEdits(edits: FragmentEdit[], text: string) {
   const sortedEdits = [...edits].sort(
     (a, b) => b.start - a.start
   )
@@ -143,4 +161,41 @@ function applyEdits(edits: { start: number; end: number; newText: string; }[], t
       acc.slice(0, edit.start) + edit.newText + acc.slice(edit.end),
     text,
   )
+}
+
+function replaceReferencesInFragment(
+  argumentReferences: SyntaxNode[],
+  replacementText: string,
+  definitionBody: SyntaxNode
+): FragmentEdit[] {
+  const bodyEdits: FragmentEdit[] = []
+
+  argumentReferences.forEach(argRef => {
+    if (
+      argRef.tree.uri === definitionBody.tree.uri
+      && argRef.startIndex >= definitionBody.startIndex
+      && argRef.endIndex <= definitionBody.endIndex) {
+      bodyEdits.push({
+        start: argRef.startIndex - definitionBody.startIndex,
+        end: argRef.endIndex - definitionBody.startIndex,
+        newText: replacementText,
+      })
+    }
+  })
+
+  return bodyEdits;
+}
+
+function addLetClauses(letClauses: string[], definitionBody: SyntaxNode): FragmentEdit[] {
+  if (letClauses.length === 0) {
+    return []
+  } else {
+    const clausePrefix = "\n" + getSpaces(definitionBody.startPosition.column + 4)
+
+    return [{
+      start: 0,
+      end: 0,
+      newText: `${["let", ...letClauses].join(clausePrefix)}\nin\n`
+    }]
+  }
 }

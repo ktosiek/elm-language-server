@@ -6,6 +6,9 @@ describe("inline function code action", () => {
 --@ Test.elm
 module Test exposing (..)
 
+type T a =
+    T a
+
 val2 = 
     0
 
@@ -19,8 +22,8 @@ foo val str =
             str + val2
 
 
-newFunction : Maybe { a | prop1 : number, prop2 : number } -> number -> number -> Maybe number
-newFunction f1 val f2 =
+newFunction : Maybe { a | prop1 : number, prop2 : number } -> number -> T number -> Maybe number
+newFunction f1 val (T f2) =
     case f1 of
         Just { prop1, prop2 } ->
             prop1 + prop2 + val + f2
@@ -33,18 +36,24 @@ newFunction f1 val f2 =
 --@ Test.elm
 module Test exposing (..)
 
+type T a =
+    T a
+
 val2 = 
     0
 
 foo val str =
     case val of
         Just { field1, field2, field3 } ->
+            let
+                (T f2) = field2
+            in
             case field1 of
                 Just { prop1, prop2 } ->
-                    prop1 + prop2 + val + field2
+                    prop1 + prop2 + val + f2
 
                 Nothing ->
-                    field2 + val2
+                    f2 + val2
 
         Nothing ->
             str + val2
