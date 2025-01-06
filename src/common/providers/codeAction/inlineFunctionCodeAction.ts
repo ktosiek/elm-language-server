@@ -30,6 +30,15 @@ CodeActionProvider.registerRefactorAction(refactorName, {
     const call = TreeUtils.findParentOfType("function_call_expr", node);
     if (call) {
       result.push({
+        title: "Inline this call",
+        kind: CodeActionKind.RefactorInline,
+        data: {
+          actionName: "inline_single_call",
+          refactorName,
+          uri: params.sourceFile.uri,
+          range: params.range,
+        },
+      }, {
         title: "Inline all calls of this function",
         kind: CodeActionKind.RefactorInline,
         data: {
@@ -58,6 +67,7 @@ CodeActionProvider.registerRefactorAction(refactorName, {
   ): IRefactorEdit => {
     const checker = params.program.getTypeChecker();
     const removeDefinition = !!actionName.match(/remove/)
+    const onlyInlineSingleCall = actionName === "inline_single_call"
 
     const nodeAtPosition = TreeUtils.getNamedDescendantForRange(
       params.sourceFile,
@@ -70,11 +80,24 @@ CodeActionProvider.registerRefactorAction(refactorName, {
     );
     const definitionNode = TreeUtils.findParentOfType("value_declaration", definitionResult.symbol!.node);
     const definitionBody = definitionNode!.lastChild!;
-    const references = References.find(definitionResult.symbol, params.program)
 
-    const edits: TextEdit[] = references.flatMap((callRef) => {
-      const callNode = callRef.node.parent?.parent?.parent;
+    let referenceNodes: SyntaxNode[];
 
+    if (onlyInlineSingleCall) {
+      referenceNodes = TreeUtils.getAllAncestorsOfType("function_call_expr", nodeAtPosition).slice(0, 1)
+
+    } else {
+      const references = References.find(definitionResult.symbol, params.program)
+
+      referenceNodes = references.flatMap(
+        callRef => {
+          const functionCallExpr = callRef.node.parent?.parent?.parent;
+          return functionCallExpr ? [functionCallExpr] : [];
+        }
+      )
+    }
+
+    const edits: TextEdit[] = referenceNodes.flatMap((callNode) => {
       if (callNode && callNode.type === "function_call_expr") {
         const argValues = functionCallArguments(callNode)
         const bodyEdits: FragmentEdit[] = [];
