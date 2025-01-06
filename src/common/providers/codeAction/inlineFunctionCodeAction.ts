@@ -30,10 +30,19 @@ CodeActionProvider.registerRefactorAction(refactorName, {
     const call = TreeUtils.findParentOfType("function_call_expr", node);
     if (call) {
       result.push({
+        title: "Inline all calls of this function",
+        kind: CodeActionKind.RefactorInline,
+        data: {
+          actionName: "inline_all_calls",
+          refactorName,
+          uri: params.sourceFile.uri,
+          range: params.range,
+        },
+      }, {
         title: "Inline function and remove definition",
         kind: CodeActionKind.RefactorInline,
         data: {
-          actionName: "inline_function",
+          actionName: "inline_all_and_remove_function",
           refactorName,
           uri: params.sourceFile.uri,
           range: params.range,
@@ -48,6 +57,7 @@ CodeActionProvider.registerRefactorAction(refactorName, {
     actionName: string,
   ): IRefactorEdit => {
     const checker = params.program.getTypeChecker();
+    const removeDefinition = !!actionName.match(/remove/)
 
     const nodeAtPosition = TreeUtils.getNamedDescendantForRange(
       params.sourceFile,
@@ -121,7 +131,7 @@ CodeActionProvider.registerRefactorAction(refactorName, {
     });
 
     const annotationNode = definitionNode?.previousSibling;
-    if (annotationNode?.type === "type_annotation") {
+    if (removeDefinition && annotationNode?.type === "type_annotation") {
       edits.push(
         TextEdit.del(Range.create(
           PositionUtil.FROM_TS_POSITION(annotationNode.startPosition).toVSPosition(),
@@ -129,14 +139,16 @@ CodeActionProvider.registerRefactorAction(refactorName, {
         ))
       );
     }
-    edits.push(
-      TextEdit.del(
-        Range.create(
-          PositionUtil.FROM_TS_POSITION(definitionNode!.startPosition).toVSPosition(),
-          PositionUtil.FROM_TS_POSITION(definitionNode!.endPosition).toVSPosition(),
+    if (removeDefinition) {
+      edits.push(
+        TextEdit.del(
+          Range.create(
+            PositionUtil.FROM_TS_POSITION(definitionNode!.startPosition).toVSPosition(),
+            PositionUtil.FROM_TS_POSITION(definitionNode!.endPosition).toVSPosition(),
+          )
         )
       )
-    )
+    }
     return {
       edits: edits,
       renamePosition: {

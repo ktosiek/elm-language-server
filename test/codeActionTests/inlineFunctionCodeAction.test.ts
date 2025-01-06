@@ -69,4 +69,37 @@ foo val str =
       expectedSource,
     );
   });
+
+  it("should inline a single call", async () => {
+    const source = `
+--@ Test.elm
+module Test exposing (..)
+
+foo val str =
+    newFunction val
+        --^
+
+newFunction : number -> number
+newFunction val =
+    val + val
+`;
+
+    const expectedSource = `
+--@ Test.elm
+module Test exposing (..)
+
+foo val str =
+    val + val
+
+newFunction : number -> number
+newFunction val =
+    val + val
+`;
+
+    await testCodeAction(
+      source,
+      [{ title: "Inline all calls of this function" }],
+      expectedSource,
+    );
+  });
 });
